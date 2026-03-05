@@ -143,8 +143,6 @@ resource "aws_db_instance" "database-instance" {
   vpc_security_group_ids = [aws_security_group.database-security-group.id]
 }
 
-
-
 resource "aws_security_group" "load_balancer_security_group" {
   name        = "Load-Balancer-SG"
   description = "SG for load balancer created from terraform"
@@ -168,8 +166,6 @@ resource "aws_security_group" "load_balancer_security_group" {
   }
 }
 
-
-
 resource "aws_iam_role" "ecs-instance-role" {
   name                 = "ecs-instance-role"
   path                 = "/"
@@ -188,7 +184,6 @@ resource "aws_iam_role" "ecs-instance-role" {
     ]
   })
 }
-
 
 resource "aws_iam_role_policy_attachment" "ecs-instance-role-attachment-1" {
   role       = aws_iam_role.ecs-instance-role.name
@@ -335,7 +330,6 @@ resource "aws_iam_role_policy_attachment" "ecs-instance-role-attachment-ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-
 data "aws_ami" "ecs_optimized_ami" {
   most_recent = true
   owners      = ["amazon"]
@@ -345,7 +339,6 @@ data "aws_ami" "ecs_optimized_ami" {
     values = ["amzn2-ami-ecs-hvm-2.0.202*-x86_64-ebs"]
   }
 }
-
 
 resource "aws_launch_template" "ecs_launch_template" {
   name_prefix   = "ecs-launch-template-"
@@ -373,7 +366,6 @@ resource "aws_autoscaling_group" "ecs_asg" {
   }
 }
 
-
 resource "aws_ecs_cluster" "cluster" {
   name = "ecs-lab-cluster"
 
@@ -384,6 +376,15 @@ resource "aws_ecs_cluster" "cluster" {
 
 data "template_file" "user_data" {
   template = file("${path.module}/resources/ecs/user_data.tpl")
+}
+
+# Render container definitions from the template file and inject the RDS endpoint.
+data "template_file" "task_definition_json" {
+  template = file("${path.module}/resources/ecs/task_definition.json.tftpl")
+
+  vars = {
+    rds_endpoint = aws_db_instance.database-instance.address
+  }
 }
 
 resource "aws_ecs_task_definition" "task_definition" {
@@ -403,21 +404,6 @@ resource "aws_ecs_task_definition" "task_definition" {
   volume {
     name      = "kernels"
     host_path = "/usr/src/kernels"
-  }
-}
-
-#data "template_file" "task_definition_json" {
-#  template = file("${path.module}/resources/ecs/task_definition.json")
-#  depends_on = [
-#    null_resource.rds_endpoint
-#  ]
-#}
-
-data "template_file" "task_definition_json" {
-  template = file("${path.module}/resources/ecs/task_definition.json.tftpl")
-
-  vars = {
-    rds_endpoint = aws_db_instance.database-instance.address
   }
 }
 
@@ -471,7 +457,6 @@ resource "aws_lb_listener" "listener" {
   }
 }
 
-
 resource "aws_secretsmanager_secret" "rds_creds" {
   name                    = "RDS_CREDS"
   recovery_window_in_days = 0
@@ -486,37 +471,6 @@ resource "aws_secretsmanager_secret_version" "secret_version" {
    }
 EOF
 }
-
-resource "null_resource" "rds_endpoint" {
-  provisioner "local-exec" {
-    command     = <<EOF
-RDS_URL="${aws_db_instance.database-instance.endpoint}"
-RDS_URL=$${RDS_URL::-5}
-sed -i "s,RDS_ENDPOINT_VALUE,$RDS_URL,g" ${path.module}/resources/ecs/task_definition.json
-EOF
-    interpreter = ["/bin/bash", "-c"]
-  }
-
-  depends_on = [
-    aws_db_instance.database-instance
-  ]
-}
-
-resource "null_resource" "cleanup" {
-  provisioner "local-exec" {
-    command     = <<EOF
-RDS_URL="${aws_db_instance.database-instance.endpoint}"
-RDS_URL=$${RDS_URL::-5}
-sed -i "s,$RDS_URL,RDS_ENDPOINT_VALUE,g" ${path.module}/resources/ecs/task_definition.json
-EOF
-    interpreter = ["/bin/bash", "-c"]
-  }
-
-  depends_on = [
-    null_resource.rds_endpoint, aws_ecs_task_definition.task_definition
-  ]
-}
-
 
 /* Creating a S3 Bucket for Terraform state file upload. */
 resource "aws_s3_bucket" "bucket_tf_files" {
