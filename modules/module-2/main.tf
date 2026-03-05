@@ -406,14 +406,20 @@ resource "aws_ecs_task_definition" "task_definition" {
   }
 }
 
+#data "template_file" "task_definition_json" {
+#  template = file("${path.module}/resources/ecs/task_definition.json")
+#  depends_on = [
+#    null_resource.rds_endpoint
+#  ]
+#}
+
 data "template_file" "task_definition_json" {
-  template = file("${path.module}/resources/ecs/task_definition.json")
-  depends_on = [
-    null_resource.rds_endpoint
-  ]
+  template = file("${path.module}/resources/ecs/task_definition.json.tftpl")
+
+  vars = {
+    rds_endpoint = aws_db_instance.database-instance.address
+  }
 }
-
-
 
 resource "aws_ecs_service" "worker" {
   name                              = "ecs_service_worker"
